@@ -103,7 +103,7 @@ ALTER TABLE proj2.customers_flights ADD CONSTRAINT fk_flights FOREIGN KEY (fligh
 ALTER TABLE proj2.customers_flights ADD CONSTRAINT ck_service_class CHECK
 	(service_class IN('B', 'F'));
 	
-/* Fancy stuff to avoid pax getting overlapping flights... but it doesn't work anymore for some reason
+/* Fancy stuff to avoid pax getting overlapping flights... but doesn't work currently and is A WIP
 CREATE OR REPLACE FUNCTION flight_tstzrange(
 	flight_number_input char(4),
 	departure_tstz timestamptz)
@@ -133,7 +133,7 @@ ALTER TABLE proj2.customers_flights ADD CONSTRAINT pax_no_overlap_flights EXCLUD
 --- End of fancy stuff to avoid pax w/ overlapping flights */
 
 /* Attempting to restrict so that planes don't get overbooked
->>>>>>>>> NEEDS TO BE UPDATED, but also maybe unnecessary if no functions desired for this project
+>>>>>>>>> Also does not work currently and is a WIP
 
 CREATE OR REPLACE FUNCTION check_seat_limit()
 RETURNS TRIGGER AS $$
