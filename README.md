@@ -1,4 +1,5 @@
-Some of my SQL assignments from my data analytics certificate program at Tufts. Course taught by Prof. Leo Hsu.
+# DATA202 - Database and Design w/ Prof. Leo Hsu.
+Some of my SQL assignments from the course.
 
 - _Grade Calculator_
 => scale my quiz/homework scores appropriately to calculate my final grade for the class (adding attendance and final projects points as scalar at the end)
