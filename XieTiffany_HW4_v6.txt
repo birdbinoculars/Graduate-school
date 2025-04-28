@@ -1,0 +1,104 @@
+/***** Part III: Calculating my grade! *****/
+DROP TABLE IF EXISTS quizzes;
+CREATE TABLE quizzes (quiz smallint PRIMARY KEY, max_score smallint);
+INSERT INTO quizzes VALUES
+(1,4),
+(2,4),
+(3,4),
+(4,5),
+(5,1),
+(6,5),
+(7,5),
+(8,4),
+(9,5),
+(10,4),
+(11,4),
+(12,5),			-- For quizzes 11, 12, the highest score applies to both
+(13,5),
+(14,2),
+(15,6),
+(16,6),
+(17,7),
+(18,5),
+(19,6),
+(20,8),
+(21,5),
+(22,5),
+(23,4),
+(24,16),
+(25,1);
+DROP TABLE IF EXISTS homeworks;
+CREATE TABLE homeworks (homework smallint PRIMARY KEY, max_score smallint);
+INSERT INTO homeworks VALUES
+(1,10),
+(2,12),
+(3,12),
+(4,15),
+(5,1);
+
+-- First, create tables to store my grades
+DROP TABLE IF EXISTS quiz_grades;
+CREATE TABLE quiz_grades (
+	quiz smallint PRIMARY KEY,
+	my_score numeric(3,1)
+);
+INSERT INTO quiz_grades VALUES 
+	(1,4),
+	(2,4),
+	(3,4),
+	(4,4.5),
+	(5,1),
+	(6,5),
+	(7,5),
+	(8,4),
+	(9,5),
+	(10,4),
+	(11,1),
+	(12,5),
+	(13,5),
+	(14,2),
+	(15,4),
+	(16,6),
+	(17,3),
+	(18,5),
+	(19,0),
+	(20,7),
+	(21, 3.5),
+	(22,5),
+	(23,4), 
+	(24,14),
+	(25,1);
+DROP TABLE IF EXISTS hw_grades;
+CREATE TABLE hw_grades (
+	homework smallint PRIMARY KEY,
+	my_score smallint
+);
+INSERT INTO hw_grades VALUES 
+	(1,10),
+	(2,12),
+	(3,12),
+	(4,15),
+	(5,1);
+
+-- Part III, Attempt #2
+-- quizzes and homeworks = max scores possible
+-- quiz_grades and hw_grades = my actual scores
+
+-- Account for quiz 11 and 12 caveat
+WITH
+	scaled_quizzes AS (
+		SELECT QG.quiz, 1.000 * QG.my_score / Q.max_score AS scaled_points
+		FROM quiz_grades QG INNER JOIN quizzes Q ON QG.quiz = Q.quiz),
+    quiz_funkiness AS (
+        SELECT MAX(scaled_points) * 2 AS max_of_q11_q12
+        FROM scaled_quizzes
+        WHERE quiz IN (11,12)),
+    X AS (SELECT SQ.scaled_points FROM scaled_quizzes SQ WHERE SQ.quiz NOT IN (11,12))
+SELECT SUM(scaled_points) + 24 + 15 + 15 AS final_grade
+FROM (
+    SELECT * FROM X
+    UNION ALL
+    SELECT QF.max_of_q11_q12 AS scaled_points FROM quiz_funkiness QF
+    UNION ALL
+    SELECT (4.0 * HG.my_score::numeric(5,3) / H.max_score) AS scaled_points FROM hw_grades HG INNER JOIN homeworks H ON HG.homework = H.homework
+) AS t;

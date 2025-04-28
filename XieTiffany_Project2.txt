@@ -1,0 +1,609 @@
+/***** Tiffany Xie: Project 2 *****/
+DROP TABLE IF EXISTS proj2.customers_flights;
+DROP TABLE IF EXISTS proj2.flights;
+DROP TABLE IF EXISTS proj2.customers;
+DROP TABLE IF EXISTS proj2.locations;
+DROP TABLE IF EXISTS proj2.timezones;
+DROP TABLE IF EXISTS proj2.aircrafts;
+
+-------------------- PART I - Setting up tables ---------------------
+CREATE TABLE proj2.aircrafts (
+	registration_number char(4),
+	model varchar(50) NOT NULL,
+	acquisition_date timestamptz NOT NULL,
+	operation_cost_hourly_rate numeric(7,2) NOT NULL
+);
+ALTER TABLE proj2.aircrafts ADD CONSTRAINT pk_aircrafts PRIMARY KEY (registration_number);
+ALTER TABLE proj2.aircrafts ADD CONSTRAINT ck_acquisition_date CHECK 
+	(EXTRACT(YEAR FROM acquisition_date) BETWEEN 2000 AND 2100);
+ALTER TABLE proj2.aircrafts ADD CONSTRAINT ck_operation_cost CHECK
+	(operation_cost_hourly_rate BETWEEN 1000 AND 15000);
+
+CREATE TABLE proj2.timezones (tz text PRIMARY KEY);
+INSERT INTO proj2.timezones (tz) SELECT DISTINCT abbrev FROM pg_timezone_names;
+
+CREATE TABLE proj2.locations (
+	airport_code char(3),
+	continent varchar(30) NOT NULL,
+	country varchar(30) NOT NULL,
+	city varchar(30) NOT NULL,
+	timezone text NOT NULL	    -- SELECT * FROM pg_timezone_names;
+);
+ALTER TABLE proj2.locations ADD CONSTRAINT pk_locations PRIMARY KEY (airport_code);
+ALTER TABLE proj2.locations ADD CONSTRAINT ck_continent CHECK
+	(continent IN ('Asia', 'Africa', 'Europe', 'North America', 'South America', 'Oceania'));
+ALTER TABLE proj2.locations ADD CONSTRAINT fk_timezone FOREIGN KEY (timezone)
+	REFERENCES proj2.timezones (tz)
+	ON UPDATE CASCADE
+	ON DELETE RESTRICT;
+
+CREATE TABLE proj2.customers (
+	passport_nationality varchar(30) NOT NULL,
+	passport_number char(9) NOT NULL,
+	passport_expiry timestamptz NOT NULL,
+	email varchar(50) NOT NULL,
+	last_name varchar(30) NOT NULL,
+	first_name varchar(30) NOT NULL,
+	dob date NOT NULL
+);
+ALTER TABLE proj2.customers ADD CONSTRAINT pk_customers PRIMARY KEY (passport_nationality, passport_number);
+ALTER TABLE proj2.customers ADD CONSTRAINT ck_dob CHECK 
+	(EXTRACT(YEAR FROM dob) BETWEEN 1900 AND 2100);
+ALTER TABLE proj2.customers ADD CONSTRAINT uq_email UNIQUE (email);
+
+CREATE TABLE proj2.flights (
+	flight_number char(4),
+	registration_number char(4) NOT NULL,
+	origin_airport char(3) NOT NULL,
+	destination_airport char(3) NOT NULL,
+	departure_tstz timestamptz NOT NULL,
+	arrival_tstz timestamptz NOT NULL,
+	business_class_cost numeric(6,2) NOT NULL,
+	first_class_cost numeric(6,2) NOT NULL
+);
+ALTER TABLE proj2.flights ADD CONSTRAINT pk_flights PRIMARY KEY (flight_number, departure_tstz, arrival_tstz);
+ALTER TABLE proj2.flights ADD CONSTRAINT excl_flights EXCLUDE USING GIST 
+	(registration_number WITH =, 
+	TSTZRANGE(departure_tstz, arrival_tstz) WITH &&);
+ALTER TABLE proj2.flights ADD CONSTRAINT fk_origin_airport FOREIGN KEY (origin_airport)
+	REFERENCES proj2.locations (airport_code)
+	ON UPDATE CASCADE
+	ON DELETE RESTRICT;
+ALTER TABLE proj2.flights ADD CONSTRAINT fk_destination_airport FOREIGN KEY (destination_airport)
+	REFERENCES proj2.locations (airport_code)
+	ON UPDATE CASCADE
+	ON DELETE RESTRICT;
+ALTER TABLE proj2.flights ADD CONSTRAINT ck_departure_tstz CHECK 
+	(EXTRACT(YEAR FROM departure_tstz) BETWEEN 1900 AND 2100);
+ALTER TABLE proj2.flights ADD CONSTRAINT ck_arrival_tstz CHECK 
+	(EXTRACT(YEAR FROM arrival_tstz) BETWEEN 1900 AND 2100);
+ALTER TABLE proj2.flights ADD CONSTRAINT ck_business_class_cost CHECK 
+	(business_class_cost BETWEEN 50 AND 10000);
+ALTER TABLE proj2.flights ADD CONSTRAINT ck_first_class_cost CHECK 
+	(business_class_cost BETWEEN 50 AND 20000);
+
+CREATE TABLE proj2.customers_flights (
+	reservation_number char(6) NOT NULL,
+	passport_nationality varchar(30) NOT NULL,
+	passport_number char(9) NOT NULL,
+	flight_number char(4) NOT NULL,
+	departure_tstz timestamptz NOT NULL,
+	arrival_tstz timestamptz NOT NULL,
+	service_class char(1) NOT NULL
+);
+ALTER TABLE proj2.customers_flights ADD CONSTRAINT pk_customers_flights PRIMARY KEY (reservation_number);
+ALTER TABLE proj2.customers_flights ADD CONSTRAINT fk_customers FOREIGN KEY (passport_nationality, passport_number)
+	REFERENCES proj2.customers (passport_nationality, passport_number)
+	ON UPDATE CASCADE
+	ON DELETE RESTRICT;
+ALTER TABLE proj2.customers_flights ADD CONSTRAINT fk_flights FOREIGN KEY (flight_number, departure_tstz, arrival_tstz)
+	REFERENCES proj2.flights (flight_number, departure_tstz, arrival_tstz)
+	ON UPDATE CASCADE
+	ON DELETE RESTRICT;
+ALTER TABLE proj2.customers_flights ADD CONSTRAINT ck_service_class CHECK
+	(service_class IN('B', 'F'));
+	
+/* Fancy stuff to avoid pax getting overlapping flights... but it doesn't work anymore for some reason
+CREATE OR REPLACE FUNCTION flight_tstzrange(
+	flight_number_input char(4),
+	departure_tstz timestamptz)
+RETURNS tstzrange AS $$
+DECLARE
+	departure_tstz_val timestamptz;
+	arrival_tstz_val timestamptz;
+BEGIN
+	SELECT departure_tstz, arrival_tstz
+	INTO departure_tstz_val, arrival_tstz_val
+	FROM proj2.flights
+	WHERE flight_number = flight_number_input AND departure_tstz = departure_tstz_input;
+
+	IF FOUND THEN
+		RETURN tstzrange(departure_tstz_val, arrival_tstz_val);
+	ELSE
+		RETURN NULL;
+	END IF;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE; -- don't modify database
+
+ALTER TABLE proj2.customers_flights ADD CONSTRAINT pax_no_overlap_flights EXCLUDE USING GIST (
+	passport_nationality WITH =,
+	passport_number WITH =,
+	flight_tstzrange(flight_number, departure_tstz) WITH &&
+);
+--- End of fancy stuff to avoid pax w/ overlapping flights */
+
+/* Attempting to restrict so that planes don't get overbooked
+>>>>>>>>> NEEDS TO BE UPDATED, but also maybe unnecessary if no functions desired for this project
+
+CREATE OR REPLACE FUNCTION check_seat_limit()
+RETURNS TRIGGER AS $$
+DECLARE
+	registration_number char(4);
+	service_class char(1);
+	assigned_seats smallint;
+	total_seats smallint;
+	departure_tstz timestamptz;
+BEGIN
+	-- Get aircraft information and seat type for event
+	SELECT F.registration_number, F. departure_tstz, F.service_class INTO registration_number, departure_tstz, service_class
+	FROM proj2.flights F
+	WHERE flight_number = NEW.flight_number AND departure_tstz = NEW.departure_tstz;
+	IF flight_number IS NULL OR departure_tstz IS NULL THEN
+		RAISE EXCEPTION 'Flight % does not exist.', NEW.flight_number;
+	END IF;
+
+	-- Pull # of seats from aircraft table
+	IF service_class = 'F' THEN
+		SELECT A.first_class_seats INTO total_seats
+		FROM aircrafts A
+		WHERE A.registration_number = registration_number;
+	ELSEIF service_class = 'B' THEN
+		SELECT A.business_class_seats INTO total_seats
+		FROM aircrafts A
+		WHERE A.registration_number = registration_number;
+	ELSE
+		RAISE EXCEPTION 'Invalid service class ''%'' for flight %.', service_class, NEW.flight_number;
+	END IF;
+
+	-- Count currently assigned seats
+	SELECT COUNT(*) INTO assigned_seats 
+	FROM flights_seats
+	WHERE flight_number = NEW.flight_number AND departure_tstz = NEW.departure_tstz;
+
+	-- Check if max # of seats exceeded
+	-- TX: referenced => https://www.postgresql.org/docs/current/plpgsql-trigger.html
+	IF assigned_seats +
+		(CASE WHEN TG_OP = 'INSERT' THEN 1 ELSE 0 END) > total_seats THEN
+		RAISE EXCEPTION 'Seat limit exceeded for flight %.', service_class;
+	END IF;
+
+	RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER check_seat_limit_trigger 
+BEFORE INSERT OR UPDATE ON proj2.flights_seats
+FOR EACH ROW EXECUTE FUNCTION check_seat_limit();
+--- End of fancy stuff to avoid overbooking flights! 
+*/
+
+-------------------- PART II - Generating Data ---------------------
+-- AIRCRAFTS
+DROP TABLE IF EXISTS proj2.temp_aircrafts;
+CREATE TABLE proj2.temp_aircrafts (
+	model varchar(50),
+	acquisition_date timestamptz,
+	operation_cost_hourly_rate numeric(7,2),
+	count_rows smallint GENERATED ALWAYS AS IDENTITY,
+	registration_number char(4)
+);
+
+INSERT INTO proj2.temp_aircrafts (model, acquisition_date, operation_cost_hourly_rate) 
+VALUES
+('Airbus A380', CURRENT_TIMESTAMP - (random() * INTERVAL '365 days'), (1000 + random() * 8531)::numeric(7,2) ),
+('Fluffy cloud', CURRENT_TIMESTAMP - (random() * INTERVAL '365 days'), (1000 + random() * 8531)::numeric(7,2) );
+
+DROP TABLE IF EXISTS proj2.aircraft_registration_numbers;
+CREATE TABLE proj2.aircraft_registration_numbers (
+	value char(4) UNIQUE NOT NULL,
+	count_rows smallint GENERATED ALWAYS AS IDENTITY);
+
+INSERT INTO proj2.aircraft_registration_numbers
+SELECT chr(random(65,90)) || chr(random(65,90)) || random(1,9) || random(1,9)
+FROM generate_series(1,2);
+
+UPDATE proj2.temp_aircrafts X 
+SET registration_number = 
+COALESCE(X.registration_number, Y.value)
+FROM proj2.aircraft_registration_numbers Y
+WHERE X.count_rows = Y.count_rows;
+
+INSERT INTO proj2.aircrafts 
+SELECT registration_number, model, acquisition_date, operation_cost_hourly_rate
+FROM proj2.temp_aircrafts;
+
+DROP TABLE IF EXISTS proj2.temp_aircrafts, proj2.aircraft_registration_numbers;
+SELECT * FROM proj2.aircrafts;
+
+-- LOCATIONS
+INSERT INTO proj2.locations VALUES ('BOS', 'North America', 'United States', 'Boston', 'EST');
+INSERT INTO proj2.locations VALUES ('CAI', 'Africa', 'Egypt', 'Cairo', 'EET');
+INSERT INTO proj2.locations VALUES ('DUB', 'Europe', 'Ireland', 'Dublin', 'GMT');
+INSERT INTO proj2.locations VALUES ('KUL', 'Asia', 'Malaysia', 'Kuala Lumpur', '+08');
+
+SELECT * FROM proj2.timezones ORDER BY tz;
+
+-- CUSTOMERS
+DROP FUNCTION IF EXISTS faker_person;
+CREATE OR REPLACE FUNCTION faker_person() 
+	RETURNS TABLE (
+	passport_nationality varchar(30),
+	passport_number char(9),
+	passport_expiry timestamptz,
+	email varchar(50), 
+	last_name varchar(30),
+	first_name varchar(30), 
+	dob date) 
+LANGUAGE plpython3u AS $$
+from faker import Faker
+import numpy as np
+fake = Faker()
+
+return np.array([
+fake.country(),
+fake.passport_number(),
+fake.date_between(end_date="+50y"),
+fake.email(),
+fake.last_name(), 
+fake.first_name(), 
+fake.date_of_birth()
+]).reshape(1,-1)
+$$;
+
+DROP TABLE IF EXISTS proj2.temp_person;
+CREATE TABLE proj2.temp_person AS
+SELECT (faker_person()).* FROM generate_series(1,300) ;
+DELETE FROM proj2.temp_person WHERE
+	LENGTH(passport_nationality) > 30 OR
+	LENGTH(email) > 50 OR
+	LENGTH(last_name) > 30 OR
+	LENGTH(first_name) > 30;
+
+INSERT INTO proj2.customers 
+(passport_nationality, passport_number, passport_expiry, email, last_name, first_name, dob)
+SELECT 
+passport_nationality, passport_number, passport_expiry, email, last_name, first_name, dob
+FROM proj2.temp_person
+WHERE email IN (
+	SELECT email FROM proj2.temp_person
+	GROUP BY email
+	HAVING COUNT(*) = 1
+); -- only keep unique records: sometimes faker generates duplicate emails
+DROP TABLE IF EXISTS proj2.temp_person;
+
+-- FLIGHTS: 2 planes, weekly flights from Boston -> Europe -> Asia, round trip.
+-- Trip #1 for Boston -> Asia, and back
+WITH
+airport_bos AS (SELECT airport_code FROM proj2.locations WHERE city = 'Boston' LIMIT 1),
+airport_asia AS (SELECT airport_code FROM proj2.locations WHERE continent = 'Asia' LIMIT 1),
+all_aircrafts AS (SELECT registration_number FROM proj2.aircrafts),
+weeks AS (
+	SELECT date_trunc('week', CURRENT_DATE + (n-1) * INTERVAL '1 week') AS week_start
+	FROM generate_series(1, ((DATE '2025-12-31' - CURRENT_DATE) / 7)::integer + 1) AS n),
+weekly_aircraft AS (
+	SELECT weeks.week_start,
+	(SELECT registration_number FROM proj2.aircrafts ORDER BY random() LIMIT 1) AS weekly_registration
+	FROM weeks)
+INSERT INTO proj2.flights 
+	(flight_number, 
+	registration_number, 
+	origin_airport, 
+	destination_airport, 
+	departure_tstz, 
+	arrival_tstz, 
+	business_class_cost, 
+	first_class_cost)
+SELECT 
+	LPAD(leg::TEXT, 4, '0') AS flight_number,
+	WA.weekly_registration AS aircraft,
+	CASE leg
+		WHEN 1 THEN (SELECT airport_code FROM airport_bos)
+		WHEN 2 THEN (SELECT airport_code FROM airport_asia)
+		END AS origin_airport,
+	CASE leg
+		WHEN 1 THEN (SELECT airport_code FROM airport_asia)
+		WHEN 2 THEN (SELECT airport_code FROM airport_bos)
+		END AS destination_airport,
+	(W.week_start + (leg - 1) * INTERVAL '1 day' + INTERVAL '5.5 hours') AS departure_tstz,
+	(W.week_start + (leg - 1) * INTERVAL '1 day' + INTERVAL '21.5 hours') AS arrival_tstz,	
+	ROUND((RANDOM() * 500 + 500)::numeric(7,2),2) AS business_class_cost,
+	ROUND((RANDOM() * 1000 + 1000)::numeric(7,2),2) AS first_class_cost
+FROM weeks W
+CROSS JOIN generate_series(1,2) AS leg
+INNER JOIN weekly_aircraft WA on W.week_start = WA.week_start;		
+
+-- Trip #2 for Boston -> Europe -> Africa, and back
+WITH 
+airport_bos AS (SELECT airport_code FROM proj2.locations WHERE city = 'Boston' LIMIT 1),
+airport_europe AS (SELECT airport_code FROM proj2.locations WHERE continent = 'Europe' LIMIT 1),
+airport_africa AS (SELECT airport_code FROM proj2.locations WHERE continent = 'Africa' LIMIT 1),
+all_aircrafts AS (SELECT registration_number FROM proj2.aircrafts),
+weeks AS (         -- series of weeks from  current date to end of 2025; n = # of weeks
+	SELECT date_trunc('week', CURRENT_DATE + (n-1) * INTERVAL '1 week') AS week_start
+	FROM generate_series(1, ((DATE '2025-12-31' - CURRENT_DATE) / 7)::integer + 1) AS n),
+weekly_aircraft AS (         -- Pick random aircraft for each week
+	SELECT weeks.week_start,
+	(SELECT registration_number FROM proj2.aircrafts ORDER BY random() LIMIT 1) AS weekly_registration
+	FROM weeks)
+	
+INSERT INTO proj2.flights 
+	(flight_number, 
+	registration_number, 
+	origin_airport, 
+	destination_airport, 
+	departure_tstz, 
+	arrival_tstz, 
+	business_class_cost, 
+	first_class_cost)
+SELECT 
+	LPAD(leg::TEXT, 4, '0') AS flight_number,
+	WA.weekly_registration AS aircraft,
+	CASE leg
+		WHEN 3 THEN (SELECT airport_code FROM airport_bos)
+		WHEN 4 THEN (SELECT airport_code FROM airport_europe)
+		WHEN 5 THEN (SELECT airport_code FROM airport_africa)
+		WHEN 6 THEN (SELECT airport_code FROM airport_europe)
+		END AS origin_airport,
+	CASE leg
+		WHEN 3 THEN (SELECT airport_code FROM airport_europe)
+		WHEN 4 THEN (SELECT airport_code FROM airport_africa)
+		WHEN 5 THEN (SELECT airport_code FROM airport_europe)
+		WHEN 6 THEN (SELECT airport_code FROM airport_bos)
+		END AS destination_airport,
+	(W.week_start + (leg - 2) * INTERVAL '1 day' + INTERVAL '7 hours') AS departure_tstz,
+	(W.week_start + (leg - 2) * INTERVAL '1 day' + INTERVAL '12 hours') AS arrival_tstz,	
+	ROUND((RANDOM() * 300 + 300)::numeric(7,2),2) AS business_class_cost,
+	ROUND((RANDOM() * 600 + 600)::numeric(7,2),2) AS first_class_cost
+FROM weeks W
+CROSS JOIN generate_series(3,6) AS leg
+INNER JOIN weekly_aircraft WA on W.week_start = WA.week_start;		
+
+SELECT * FROM proj2.flights ORDER BY departure_tstz ASC;
+DROP TABLE IF EXISTS proj2.temp_flights;
+
+-- CUSTOMERS_FLIGHTS
+DROP TABLE IF EXISTS proj2.legal_assignments; -- all the legally possible combos of flights/pax
+CREATE TABLE proj2.legal_assignments AS
+SELECT
+	flight_number,
+	departure_tstz,
+	arrival_tstz,
+	passport_nationality,
+	passport_number
+FROM 
+	proj2.flights 
+CROSS JOIN 
+	proj2.customers;
+
+DROP TABLE IF EXISTS proj2.legal_assignments_sampled; -- prior table is huge, so sample
+CREATE TABLE proj2.legal_assignments_sampled AS
+	SELECT * FROM proj2.legal_assignments
+	ORDER BY RANDOM()
+	LIMIT 8000;
+
+DROP TABLE IF EXISTS proj2.customers_flights_temp;
+CREATE TABLE proj2.customers_flights_temp AS -- missing reservation number and service class
+SELECT 
+	A.*
+FROM proj2.legal_assignments_sampled A
+LEFT JOIN proj2.legal_assignments_sampled B ON
+	(A.passport_nationality = B.passport_nationality AND 
+		A.passport_number = B.passport_number) AND
+		A.ctid <> B.ctid AND -- same passenger, but listed in a different record of that table
+	(TSTZRANGE(A.departure_tstz, A.arrival_tstz) && 
+		TSTZRANGE(B.departure_tstz, B.arrival_tstz)) -- pax flights don't overlap!
+WHERE B IS NULL;
+ALTER TABLE proj2.customers_flights_temp 
+ADD row_counter smallint GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1);
+
+DROP TABLE IF EXISTS proj2.res_num_and_service_class;
+CREATE TABLE proj2.res_num_and_service_class (
+	reservation_number char(6),
+	service_class char(1)
+);
+INSERT INTO proj2.res_num_and_service_class
+SELECT 
+	chr(random(65,90)) || chr(random(65,90)) || chr(random(65,90)) || chr(random(65,90)) || chr(random(65,90)) || chr(random(65,90)) AS reservation_number,
+	CASE WHEN random() < 0.8 THEN 'B' ELSE 'F' END AS service_class
+	FROM generate_series(1,25000); -- generate a whole ton of possible res numbers
+
+DROP TABLE IF EXISTS proj2.res_num_and_service_class_temp;
+CREATE TABLE proj2.res_num_and_service_class_temp AS
+	SELECT DISTINCT reservation_number, service_class
+	FROM proj2.res_num_and_service_class
+	WHERE reservation_number IS NOT NULL AND 
+		service_class IS NOT NULL
+	LIMIT (SELECT COUNT(*) FROM proj2.customers_flights_temp); -- only keep distinct values + limit to # of records in our customers_flights table
+ALTER TABLE proj2.res_num_and_service_class_temp 
+ADD row_counter smallint GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1);
+
+DROP TABLE IF EXISTS proj2.pls_work;
+CREATE TABLE proj2.pls_work AS
+SELECT 
+	Y.reservation_number,
+	X.passport_nationality, 
+	X.passport_number, 
+	X.flight_number,
+	X.departure_tstz,
+	X.arrival_tstz,
+	Y.service_class
+FROM proj2.customers_flights_temp X 
+INNER JOIN proj2.res_num_and_service_class_temp Y
+ON X.row_counter = Y.row_counter
+ORDER BY passport_nationality, passport_number, departure_tstz;
+DROP TABLE IF EXISTS 
+	proj2.legal_assignments, proj2.legal_assignments_sampled,
+	proj2.same_pax_overlap_flights,
+	proj2.customers_flights_temp, proj2.res_num_and_service_class, proj2.res_num_and_service_class_temp;
+SELECT * FROM proj2.pls_work;
+
+-- DROP FOREIGN KEYS TO UPSERT DATA
+ALTER TABLE proj2.customers_flights DROP CONSTRAINT fk_customers;
+ALTER TABLE proj2.customers_flights DROP CONSTRAINT fk_flights;
+
+INSERT INTO proj2.customers_flights
+(reservation_number, passport_nationality, passport_number, flight_number, departure_tstz, arrival_tstz, service_class)
+SELECT 
+reservation_number, passport_nationality, passport_number, flight_number, departure_tstz, arrival_tstz, service_class
+FROM proj2.pls_work;
+
+SELECT * FROM proj2.customers_flights;
+DROP TABLE IF EXISTS proj2.pls_work;
+
+-- ADD BACK FOREIGN KEYS
+ALTER TABLE proj2.customers_flights ADD CONSTRAINT fk_customers FOREIGN KEY (passport_nationality, passport_number)
+	REFERENCES proj2.customers (passport_nationality, passport_number)
+	ON UPDATE CASCADE
+	ON DELETE RESTRICT;
+ALTER TABLE proj2.customers_flights ADD CONSTRAINT fk_flights FOREIGN KEY (flight_number, departure_tstz, arrival_tstz)
+	REFERENCES proj2.flights (flight_number, departure_tstz, arrival_tstz)
+	ON UPDATE CASCADE
+	ON DELETE RESTRICT;
+
+-- SEAT MAPS
+DROP TABLE IF EXISTS proj2.seat_maps;
+CREATE TABLE proj2.seat_maps (
+	service_class char(1),
+	seat_assignment varchar(3),
+	CONSTRAINT pk_seat_maps PRIMARY KEY (seat_assignment)
+);
+
+-- Seat map
+INSERT INTO proj2.seat_maps (seat_assignment, service_class)
+-- plane #1
+SELECT
+	row || column1 AS seat_assignment,'F' AS service_class 
+FROM 
+	generate_series (1,6) AS row CROSS JOIN 
+	(VALUES ('A'), ('D'))
+UNION ALL
+-- plane #2
+SELECT
+	row || column1 AS seat_assignment,'B' AS service_class 
+FROM 
+	generate_series (7,20) AS row CROSS JOIN 
+	(VALUES ('A'), ('B'), ('C'), ('D'))
+ORDER BY service_class, seat_assignment;
+
+SELECT * FROM proj2.seat_maps;
+
+-- Add seating assignments to the customers_flights table!
+DROP TABLE IF EXISTS proj2.customers_flights_v2;
+CREATE TABLE proj2.customers_flights_v2 AS
+WITH 
+flight_pax_ordered AS (
+	SELECT
+		flight_number, departure_tstz, 
+		passport_nationality, passport_number,
+		service_class,
+		ROW_NUMBER() OVER (PARTITION BY flight_number, departure_tstz, service_class 
+			ORDER BY passport_nationality, passport_number) AS pax_ordered
+	FROM proj2.customers_flights
+),
+seat_map_ordered AS (
+	SELECT
+		seat_assignment,
+		service_class,
+		ROW_NUMBER() OVER (PARTITION BY service_class
+			ORDER BY seat_assignment) AS seats_ordered
+	FROM proj2.seat_maps
+)
+SELECT
+	X.flight_number,
+	X.departure_tstz,
+	X.passport_nationality,
+	X.passport_number,
+	X.service_class,
+	Y.seat_assignment 
+FROM flight_pax_ordered X
+INNER JOIN seat_map_ordered Y
+ON X.service_class = Y.service_class
+AND X.pax_ordered = Y.seats_ordered;
+
+ALTER TABLE proj2.customers_flights ADD COLUMN seat_assignment varchar(3);
+UPDATE proj2.customers_flights X
+SET seat_assignment = Y.seat_assignment
+FROM proj2.customers_flights_v2 Y
+WHERE X.flight_number = Y.flight_number AND
+X.departure_tstz = Y.departure_tstz AND
+X.passport_nationality = Y.passport_nationality AND
+X.passport_number = Y.passport_number AND
+X.service_class = Y.service_class;
+
+DROP TABLE IF EXISTS proj2.customers_flights_v2;
+
+DELETE FROM proj2.customers_flights WHERE seat_assignment IS NULL;
+-- not sure why some end up as null: looks like it happens when there aren't enough seats
+
+-------------------- PART III - QUERYING THE DATA! ---------------------
+-- Will we earn a profit?
+-- No, I used a very small sample for reservations so that my code could run faster.
+-- I think that's why total operating costs are so high but revenue is so low (very few reservations)
+SELECT
+	TO_CHAR(SUM(A.operation_cost_hourly_rate * 
+		EXTRACT(EPOCH FROM (F.arrival_tstz - F.departure_tstz))/3600), 'FM9,999,999,999') AS total_operating_cost,
+	TO_CHAR(SUM(CASE WHEN C.service_class = 'B' THEN F.business_class_cost ELSE 0 END), 'FM9,999,999,999') AS total_b_revenue,
+	TO_CHAR(SUM(CASE WHEN C.service_class = 'F' THEN F.first_class_cost ELSE 0 END), 'FM9,999,999,999') AS total_f_revenue,	
+-- this is net revenue = [total_b_class_revenue] + [total_f_class_revenue] - [total_operating_cost] 
+	TO_CHAR(SUM(CASE WHEN C.service_class = 'B' THEN F.business_class_cost ELSE 0 END) +
+	SUM(CASE WHEN C.service_class = 'F' THEN F.first_class_cost ELSE 0 END) -
+	SUM(A.operation_cost_hourly_rate * 
+		EXTRACT(EPOCH FROM (F.arrival_tstz - F.departure_tstz))/3600), 'FM9,999,999,999') AS net_revenue
+FROM proj2.flights F
+INNER JOIN proj2.aircrafts A ON F.registration_number = A.registration_number
+INNER JOIN proj2.customers_flights C ON F.flight_number = C.flight_number AND F.departure_tstz = C.departure_tstz AND F.arrival_tstz = C.arrival_tstz;
+	
+-- Given particular flight, identify # of empty seats
+WITH 
+	specific_flight AS (
+		SELECT
+		'0001' AS specific_flight_number,
+		'2025-09-08 05:30:00-04'::timestamptz AS specific_departure_tstz),
+	total_seats AS (
+		SELECT
+		COUNT(*) AS total_seats FROM proj2.seat_maps),
+	occupied_seats AS (
+		SELECT
+		COUNT(CF.seat_assignment) AS occupied_seats FROM proj2.customers_flights CF
+		INNER JOIN proj2.flights F ON CF.flight_number = F.flight_number AND CF.departure_tstz = F.departure_tstz
+		INNER JOIN specific_flight SF ON F.flight_number = SF.specific_flight_number AND F.departure_tstz = SF.specific_departure_tstz)
+SELECT
+	TS.total_seats,
+	COALESCE(OS.occupied_seats,0) AS occupied_seats,
+	TS.total_seats - COALESCE(OS.occupied_seats,0) AS empty_seats
+FROM total_seats TS CROSS JOIN occupied_seats OS;
+
+-- Display flights departure/arrival time columns in local time zone 
+WITH flight_timezones AS (
+	SELECT 
+		F.origin_airport,
+		origin.timezone AS departure_timezone,
+		F.departure_tstz,
+		F.destination_airport,
+		destination.timezone AS arrival_timezone,
+		F.arrival_tstz
+	FROM proj2.flights F
+	INNER JOIN proj2.locations origin ON F.origin_airport = origin.airport_code
+	INNER JOIN proj2.locations destination ON F.destination_airport = destination.airport_code
+)
+SELECT
+	origin_airport,
+	departure_tstz AT TIME ZONE departure_timezone AS departure_tstz_local,
+	departure_timezone,
+	destination_airport,
+	arrival_tstz AT TIME ZONE arrival_timezone AS arrival_tstz_local,
+	arrival_timezone
+FROM
+	flight_timezones;
+
+-------------------- THE END OF PROJECT 2 ---------------------

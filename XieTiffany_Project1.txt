@@ -1,0 +1,501 @@
+-----------------------------------------
+/***** TIFFANY XIE'S DENTAL OFFICE *****/
+-----------------------------------------
+/***** Table 1 of 10: positions *****/
+-- Create table
+CREATE TABLE proj1.positions (
+	position varchar(15) NOT NULL,
+	salary int NOT NULL,
+	positions_updated timestamptz NOT NULL -- table updated annually for inflation
+);
+
+-- Add constraints
+ALTER TABLE proj1.positions
+	ADD CONSTRAINT pk_positions
+	PRIMARY KEY (position);
+ALTER TABLE proj1.positions
+	ADD CONSTRAINT ck_positions
+	CHECK (position IN ('dentist', 'hygienist', 'admin'));
+ALTER TABLE proj1.positions
+	ADD CONSTRAINT ck_salary
+	CHECK (salary BETWEEN '80000' and '500000');
+	-- office pays admin a livable and competitive salary
+
+-- Insert data
+INSERT INTO proj1.positions
+	(position, salary, positions_updated) VALUES
+	('dentist', '250000', CURRENT_TIMESTAMP);
+INSERT INTO proj1.positions
+	(position, salary, positions_updated) VALUES
+	('hygienist', '125000', CURRENT_TIMESTAMP);
+INSERT INTO proj1.positions
+	(position, salary, positions_updated) VALUES
+	('admin', '85000', CURRENT_TIMESTAMP);
+
+SELECT * FROM proj1.positions;
+	
+/***** Table 2 of 10: staff *****/
+-- Create table
+CREATE TABLE proj1.staff (
+	staff_ssn char(9) NOT NULL,
+	staff_name varchar(35) NOT NULL, -- "Last, First"
+	position varchar(15) NOT NULL,
+	start_date date, -- first day on the payroll
+	full_time bool NOT NULL,
+	staff_dob date NOT NULL,
+	staff_updated timestamptz NOT NULL -- last time table was updated
+);
+
+-- Add constraints
+ALTER TABLE proj1.staff
+	ADD CONSTRAINT pk_staff
+	PRIMARY KEY (staff_ssn); -- therefore must also be unique
+ALTER TABLE proj1.staff
+	ADD CONSTRAINT fk_position FOREIGN KEY (position)
+	REFERENCES proj1.positions (position)
+	ON UPDATE RESTRICT -- they will always need the basic 3 positions!!
+	ON DELETE RESTRICT;
+ALTER TABLE proj1.staff
+	ADD CONSTRAINT ck_start_date
+	CHECK (EXTRACT(YEAR FROM start_date) > 2000); -- assume office opened then
+ALTER TABLE proj1.staff
+	ADD CONSTRAINT ck_staff_dob
+	CHECK (EXTRACT(YEAR FROM staff_dob) > 1935); -- if they're almost 100 years old they shouldnt be working!!
+
+-- Insert data
+INSERT INTO proj1.staff
+	(staff_ssn, staff_name, position, start_date, full_time, staff_dob, staff_updated) VALUES
+	('123456789', 'Lennox, Ari', 'dentist', '1 January 2001', TRUE, '26 March 1991', CURRENT_TIMESTAMP);
+INSERT INTO proj1.staff
+	(staff_ssn, staff_name, position, start_date, full_time, staff_dob, staff_updated) VALUES
+	('234567890', 'The Swamp Princess, Doechii', 'dentist', '1 January 2001', TRUE, '14 August 1998', CURRENT_TIMESTAMP);
+INSERT INTO proj1.staff
+	(staff_ssn, staff_name, position, start_date, full_time, staff_dob, staff_updated) VALUES
+	('345678901', 'Siouxsie, Sioux', 'hygienist', '1 January 2001', TRUE, '27 May 1957', CURRENT_TIMESTAMP);
+INSERT INTO proj1.staff
+	(staff_ssn, staff_name, position, start_date, full_time, staff_dob, staff_updated) VALUES
+	('456789012', 'de la Rocha, Zack', 'hygienist', '6 March 2001', TRUE, '12 January 1970', CURRENT_TIMESTAMP);
+INSERT INTO proj1.staff
+	(staff_ssn, staff_name, position, start_date, full_time, staff_dob, staff_updated) VALUES
+	('567890123', 'Obama, Barack', 'admin', '22 January 2018', TRUE, '4 August 1961', CURRENT_TIMESTAMP);
+
+SELECT * FROM proj1.staff;
+
+/***** Table 3 of 10: patients ******/
+-- Create table
+CREATE TABLE proj1.patients (
+	patient_id int NOT NULL GENERATED ALWAYS AS IDENTITY,
+		-- replace w/ random seq of 8 numbers?
+	patient_name varchar(35) NOT NULL, -- "Last, First"
+	patient_name_preferred varchar(35),
+	patient_dob date NOT NULL,
+	patient_sex char(1) NOT NULL, -- F (female), M (male), O (other)
+	patient_phone char(10) NOT NULL,
+	patients_updated timestamptz NOT NULL
+);
+
+-- Add constraints
+ALTER TABLE proj1.patients
+	ADD CONSTRAINT pk_patients
+	PRIMARY KEY (patient_id);
+ALTER TABLE proj1.patients
+	ADD CONSTRAINT ck_patient_dob
+	CHECK (EXTRACT(YEAR FROM patient_dob) > 1935);
+ALTER TABLE proj1.patients
+	ADD CONSTRAINT ck_patient_sex
+	CHECK (patient_sex IN ('M', 'F', 'O'));
+
+-- Insert data
+INSERT INTO proj1.patients
+	(patient_name, patient_name_preferred, patient_dob, patient_sex, patient_phone, patients_updated) VALUES
+	('Thiam, Aliaune', 'Akon', '16 April 1973', 'M', '1234567890', CURRENT_TIMESTAMP);
+INSERT INTO proj1.patients
+	(patient_name, patient_name_preferred, patient_dob, patient_sex, patient_phone, patients_updated) VALUES
+	('Woods, Gloria', 'GloRilla', '28 July 1999', 'F', '2345678901', CURRENT_TIMESTAMP);
+INSERT INTO proj1.patients
+	(patient_name, patient_name_preferred, patient_dob, patient_sex, patient_phone, patients_updated) VALUES
+	('Pete, Megan', 'Megan Thee Stallion', '15 February 1995', 'F', '3456789012', CURRENT_TIMESTAMP);
+INSERT INTO proj1.patients
+	(patient_name, patient_name_preferred, patient_dob, patient_sex, patient_phone, patients_updated) VALUES
+	('Ćmiel, Nat', 'yeule', '16 December 1997', 'O', '4567890123', CURRENT_TIMESTAMP);
+INSERT INTO proj1.patients
+	(patient_name, patient_dob, patient_sex, patient_phone, patients_updated) VALUES
+	('Saleh, Dua', '3 November 1994', 'O', '5678901234', CURRENT_TIMESTAMP);
+
+SELECT * FROM proj1.patients;
+
+/***** Table 4 of 10: teeth ******/
+-- Create table
+CREATE TABLE proj1.teeth (
+	tooth_number smallint NOT NULL,
+	tooth_name varchar(15) NOT NULL,
+	tooth_region varchar(15) NOT NULL
+);
+
+-- Add constraints
+ALTER TABLE proj1.teeth
+	ADD CONSTRAINT pk_teeth
+	PRIMARY KEY (tooth_number);
+ALTER TABLE proj1.teeth
+	ADD CONSTRAINT ck_tooth_number
+	CHECK (
+		tooth_number BETWEEN '1' AND '32' OR
+		tooth_number = '99'
+	);
+
+-- Insert data: code copied and pasted over from spreadsheet (attached)
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('1', '3rd molar', 'upper right');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('2', '2nd molar', 'upper right');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('3', '1st molar', 'upper right');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('4', '2nd bicuspid', 'upper right');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('5', '1st bicuspid', 'upper right');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('6', 'cuspid', 'upper right');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('7', 'lateral incisor', 'upper right');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('8', 'central incisor', 'upper right');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('9', 'central incisor', 'upper left');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('10', 'lateral incisor', 'upper left');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('11', 'cuspid', 'upper left');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('12', '1st bicuspid', 'upper left');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('13', '2nd bicuspid', 'upper left');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('14', '1st molar', 'upper left');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('15', '2nd molar', 'upper left');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('16', '3rd molar', 'upper left');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('17', '3rd molar', 'lower left');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('18', '2nd molar', 'lower left');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('19', '1st molar', 'lower left');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('20', '2nd bicuspid', 'lower left');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('21', '1st bicuspid', 'lower left');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('22', 'cuspid', 'lower left');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('23', 'lateral incisor', 'lower left');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('24', 'central incisor', 'lower left');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('25', 'central incisor', 'central right');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('26', 'lateral incisor', 'central right');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('27', 'cuspid', 'central right');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('28', '1st bicuspid', 'central right');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('29', '2nd bicuspid', 'central right');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('30', '1st molar', 'central right');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('31', '2nd molar', 'central right');
+INSERT INTO proj1.teeth (tooth_number, tooth_name, tooth_region) VALUES ('32', '3rd molar', 'central right');
+
+SELECT * FROM proj1.teeth;
+
+/***** Table 5 of 10: procedures ******/
+-- Create table
+CREATE TABLE proj1.procedures (
+	procedure_code char(5) NOT NULL,
+	procedure_desc varchar(100) NOT NULL,
+	procedure_updated timestamptz NOT NULL
+);
+
+-- Add constraints
+ALTER TABLE proj1.procedures
+	ADD CONSTRAINT pk_procedures
+	PRIMARY KEY (procedure_code);
+
+-- Insert data (just going to go with a couple)
+INSERT INTO proj1.procedures 
+	(procedure_code, procedure_desc, procedure_updated) VALUES
+	('D0190', 'screening of a patient', CURRENT_TIMESTAMP);
+INSERT INTO proj1.procedures 
+	(procedure_code, procedure_desc, procedure_updated) VALUES
+	('D0210', 'intraoral - complete series of radiographic images', CURRENT_TIMESTAMP);
+INSERT INTO proj1.procedures
+	(procedure_code, procedure_desc, procedure_updated) VALUES
+	('D1352', 'preventive resin restoration in a moderate to high caries risk patient – permanent tooth', CURRENT_TIMESTAMP);
+INSERT INTO proj1.procedures
+	(procedure_code, procedure_desc, procedure_updated) VALUES
+	('D2740', 'crown - porcelain/ceramic', CURRENT_TIMESTAMP);
+INSERT INTO proj1.procedures
+	(procedure_code, procedure_desc, procedure_updated) VALUES
+	('D3221', 'pulpal debridement, primary and permanent teeth', CURRENT_TIMESTAMP);
+
+SELECT * FROM proj1.procedures;
+
+/***** Table 6 of 10: appointments ******/
+-- Create table
+CREATE TABLE proj1.appointments (
+	appointment_id int NOT NULL GENERATED ALWAYS AS IDENTITY,
+		-- replace w/ random seq of 8 numbers?
+	appointment_time tstzrange NOT NULL,
+	patient_id int NOT NULL,
+	appointments_updated timestamptz NOT NULL
+);
+
+-- Add constraints
+ALTER TABLE proj1.appointments
+	ADD CONSTRAINT pk_appointments
+	PRIMARY KEY (appointment_id);
+ALTER TABLE proj1.appointments
+	ADD CONSTRAINT fk_patient_id FOREIGN KEY (patient_id)
+	REFERENCES proj1.patients (patient_id)
+	ON UPDATE CASCADE
+	ON DELETE RESTRICT;
+ALTER TABLE proj1.appointments
+	ADD CONSTRAINT excl_patient_overlap
+	EXCLUDE USING GIST (
+		patient_id WITH =, 
+		appointment_time WITH &&
+	);
+ALTER TABLE proj1.appointments
+	ADD CONSTRAINT ck_appointment_time
+	CHECK (
+		-- Only mon to fri
+		EXTRACT (DOW FROM lower(appointment_time)) BETWEEN '1' AND '5' AND
+		EXTRACT (DOW FROM upper(appointment_time)) BETWEEN '1' AND '5' AND
+		-- Between 8am to 5pm
+		EXTRACT (HOUR FROM lower(appointment_time) AT TIME ZONE 'EST') >= 8 AND
+		EXTRACT (HOUR FROM lower(appointment_time) AT TIME ZONE 'EST') <= 16 AND
+		EXTRACT (HOUR FROM upper(appointment_time) AT TIME ZONE 'EST') >= 8 AND
+		EXTRACT (HOUR FROM upper(appointment_time) AT TIME ZONE 'EST') < 17 AND
+		-- Exclude staff lunch  - no operations scheduled then
+		NOT (
+			EXTRACT(HOUR FROM lower(appointment_time) AT TIME ZONE 'EST') >= 12 AND
+			EXTRACT(HOUR FROM lower(appointment_time) AT TIME ZONE 'EST') < 13
+			) AND
+		NOT (
+			EXTRACT (HOUR FROM upper(appointment_time) AT TIME ZONE 'EST') >= 12 AND
+			EXTRACT (HOUR FROM upper(appointment_time) AT TIME ZONE 'EST') < 13
+			) AND
+		-- Can't be before office was opened!
+		EXTRACT(YEAR FROM lower(appointment_time)) > 2000 AND
+		EXTRACT(YEAR FROM upper(appointment_time)) > 2000 
+	);
+
+-- Insert data
+INSERT INTO proj1.appointments
+	(appointment_time, patient_id, appointments_updated) VALUES
+	('[2025-1-6 8:00:00-5, 2025-1-6 9:30:00-5]', '1', CURRENT_TIMESTAMP);
+INSERT INTO proj1.appointments
+	(appointment_time, patient_id, appointments_updated) VALUES
+	('[2025-3-11 10:30:00-5, 2025-3-11 11:00:00-5]', '2', CURRENT_TIMESTAMP);
+INSERT INTO proj1.appointments
+	(appointment_time, patient_id, appointments_updated) VALUES
+	('[2025-3-11 13:30:00-5, 2025-3-11 14:30:00-5]', '3', CURRENT_TIMESTAMP);
+
+SELECT * FROM proj1.appointments;
+
+/***** Table 7 of 10:  payments ******/
+-- Create table
+CREATE TABLE proj1.payments (
+	patient_id int NOT NULL,
+	payment_date timestamptz NOT NULL,
+	payment_amount smallint NOT NULL,
+	payment_updated timestamptz NOT NULL
+);
+
+-- Add constraints
+ALTER TABLE proj1.payments
+	ADD CONSTRAINT pk_payments
+	PRIMARY KEY (patient_id, payment_date); -- unlikely they'd be making two payments on the same day
+ALTER TABLE proj1.payments
+	ADD CONSTRAINT fk_payments FOREIGN KEY (patient_id)
+	REFERENCES proj1.patients (patient_id)
+	ON UPDATE CASCADE
+	ON DELETE RESTRICT; -- still want to keep record of payments from patients that aren't around anymore
+ALTER TABLE proj1.payments
+	ADD CONSTRAINT ck_payment_date
+	CHECK (EXTRACT(YEAR FROM payment_date) > 2000);
+ALTER TABLE proj1.payments
+	ADD CONSTRAINT ck_payment_amount
+	CHECK (payment_amount > 0);
+
+-- Insert data
+INSERT INTO proj1.payments
+	(patient_id, payment_date, payment_amount, payment_updated) VALUES
+	('1', '2025-01-06 09:35:57-05', '100', CURRENT_TIMESTAMP);
+INSERT INTO proj1.payments
+	(patient_id, payment_date, payment_amount, payment_updated) VALUES
+	('1', '2025-02-01 08:45:13-05', '100', CURRENT_TIMESTAMP);
+
+SELECT * FROM proj1.payments;
+
+/***** Table 8 of 10: procedure_costs ******/
+-- Create table
+CREATE TABLE proj1.procedure_pricehistory (
+	procedure_code char(5) NOT NULL,
+	price_date timestamptz NOT NULL,
+	procedure_price smallint NOT NULL,
+	procedure_pricehistory_updated timestamptz NOT NULL
+);
+-- Add constraints
+ALTER TABLE proj1.procedure_pricehistory
+	ADD CONSTRAINT pk_procedure_pricehistory
+	PRIMARY KEY (procedure_code, price_date);
+ALTER TABLE proj1.procedure_pricehistory
+	ADD CONSTRAINT fk_procedure_code FOREIGN KEY (procedure_code)
+	REFERENCES proj1.procedures (procedure_code)
+	ON UPDATE CASCADE
+	ON DELETE RESTRICT;
+ALTER TABLE proj1.procedure_pricehistory
+	ADD CONSTRAINT ck_price_date
+	CHECK (EXTRACT(YEAR FROM price_date) > 2000);
+ALTER TABLE proj1.procedure_pricehistory
+	ADD CONSTRAINT ck_procedure_price
+	CHECK (procedure_price > 0);
+
+-- Insert values
+INSERT INTO proj1.procedure_pricehistory
+	(procedure_code, price_date, procedure_price, procedure_pricehistory_updated) VALUES
+	('D0190', '1 January 2001', '50', CURRENT_TIMESTAMP);
+INSERT INTO proj1.procedure_pricehistory
+	(procedure_code, price_date, procedure_price, procedure_pricehistory_updated) VALUES
+	('D0190', '1 January 2008', '80', CURRENT_TIMESTAMP);
+INSERT INTO proj1.procedure_pricehistory
+	(procedure_code, price_date, procedure_price, procedure_pricehistory_updated) VALUES
+	('D0190', '1 January 2020', '100', CURRENT_TIMESTAMP);
+INSERT INTO proj1.procedure_pricehistory
+	(procedure_code, price_date, procedure_price, procedure_pricehistory_updated) VALUES
+	('D0210', '1 January 2001', '150', CURRENT_TIMESTAMP);
+INSERT INTO proj1.procedure_pricehistory
+	(procedure_code, price_date, procedure_price, procedure_pricehistory_updated) VALUES
+	('D0210', '1 January 2008', '200', CURRENT_TIMESTAMP);
+INSERT INTO proj1.procedure_pricehistory
+	(procedure_code, price_date, procedure_price, procedure_pricehistory_updated) VALUES
+	('D0210', '1 January 2020', '350', CURRENT_TIMESTAMP);
+INSERT INTO proj1.procedure_pricehistory
+	(procedure_code, price_date, procedure_price, procedure_pricehistory_updated) VALUES
+	('D1352', '1 January 2001', '200', CURRENT_TIMESTAMP);
+INSERT INTO proj1.procedure_pricehistory
+	(procedure_code, price_date, procedure_price, procedure_pricehistory_updated) VALUES
+	('D1352', '1 January 2008', '250', CURRENT_TIMESTAMP);
+INSERT INTO proj1.procedure_pricehistory
+	(procedure_code, price_date, procedure_price, procedure_pricehistory_updated) VALUES
+	('D1352', '1 January 2020', '275', CURRENT_TIMESTAMP);
+INSERT INTO proj1.procedure_pricehistory
+	(procedure_code, price_date, procedure_price, procedure_pricehistory_updated) VALUES
+	('D2740', '15 January 2003', '300', CURRENT_TIMESTAMP);
+INSERT INTO proj1.procedure_pricehistory
+	(procedure_code, price_date, procedure_price, procedure_pricehistory_updated) VALUES
+	('D2740', '15 January 2020', '525', CURRENT_TIMESTAMP);
+INSERT INTO proj1.procedure_pricehistory
+	(procedure_code, price_date, procedure_price, procedure_pricehistory_updated) VALUES
+	('D3221', '15 January 2003', '275', CURRENT_TIMESTAMP);
+
+SELECT * FROM proj1.procedure_pricehistory;
+
+/***** Table 9 of 10:: procedure_staff ******/
+-- Create table
+CREATE TABLE proj1.procedure_staff (
+	procedure_code char(5) NOT NULL,
+	staff_ssn char(9) NOT NULL
+);
+
+-- Add constraints
+ALTER TABLE proj1.procedure_staff
+	ADD CONSTRAINT pk_procedure_staff
+	PRIMARY KEY (procedure_code, staff_ssn);
+ALTER TABLE proj1.procedure_staff
+	ADD CONSTRAINT fk_procedure_code FOREIGN KEY (procedure_code)
+	REFERENCES proj1.procedures (procedure_code)
+	ON UPDATE CASCADE
+	ON DELETE CASCADE;
+ALTER TABLE proj1.procedure_staff
+	ADD CONSTRAINT fk_staff_ssn FOREIGN KEY (staff_ssn)
+	REFERENCES proj1.staff (staff_ssn)
+	ON UPDATE CASCADE
+	ON DELETE CASCADE;
+
+-- Insert values
+--- dentist Ari Lennox
+INSERT INTO proj1.procedure_staff (procedure_code, staff_ssn) VALUES
+	('D0190', '123456789');
+INSERT INTO proj1.procedure_staff (procedure_code, staff_ssn) VALUES
+	('D0210', '123456789');
+INSERT INTO proj1.procedure_staff (procedure_code, staff_ssn) VALUES
+	('D1352', '123456789');
+INSERT INTO proj1.procedure_staff (procedure_code, staff_ssn) VALUES
+	('D2740', '123456789');
+INSERT INTO proj1.procedure_staff (procedure_code, staff_ssn) VALUES
+	('D3221', '123456789');
+--- dentist Doechii The Swamp Princess
+INSERT INTO proj1.procedure_staff (procedure_code, staff_ssn) VALUES
+	('D0190', '234567890');
+INSERT INTO proj1.procedure_staff (procedure_code, staff_ssn) VALUES
+	('D0210', '234567890');
+INSERT INTO proj1.procedure_staff (procedure_code, staff_ssn) VALUES
+	('D1352', '234567890');
+INSERT INTO proj1.procedure_staff (procedure_code, staff_ssn) VALUES
+	('D2740', '234567890');
+INSERT INTO proj1.procedure_staff (procedure_code, staff_ssn) VALUES
+	('D3221', '234567890');
+--- hygienist Sioux Siouxsie
+INSERT INTO proj1.procedure_staff (procedure_code, staff_ssn) VALUES
+	('D0190', '345678901');
+INSERT INTO proj1.procedure_staff (procedure_code, staff_ssn) VALUES
+	('D0210', '345678901');
+--- hygienist Zack de la Rocha
+INSERT INTO proj1.procedure_staff (procedure_code, staff_ssn) VALUES
+	('D0190', '456789012');
+INSERT INTO proj1.procedure_staff (procedure_code, staff_ssn) VALUES
+	('D0210', '456789012');
+
+SELECT * FROM proj1.procedure_staff;
+
+
+/***** Table 10 of 10: operation_teeth_procedure_staff ******/
+-- Create table
+CREATE TABLE proj1.appointment_procedure_staff_teeth (
+	operation_id smallint NOT NULL GENERATED ALWAYS AS IDENTITY,
+	appointment_id int NOT NULL,
+	procedure_code char(5) NOT NULL,
+	staff_ssn char(9) NOT NULL,
+	tooth_number smallint
+);
+
+-- Add constraints
+ALTER TABLE proj1.appointment_procedure_staff_teeth
+	ADD CONSTRAINT pk_appointment_procedure_staff_teeth
+	PRIMARY KEY (operation_id);
+ALTER TABLE proj1.appointment_procedure_staff_teeth
+	ADD CONSTRAINT fk_appointment_id FOREIGN KEY (appointment_id)
+	REFERENCES proj1.appointments (appointment_id)
+	ON UPDATE CASCADE
+	ON DELETE CASCADE;
+ALTER TABLE proj1.appointment_procedure_staff_teeth
+	ADD CONSTRAINT fk_teeth FOREIGN KEY (tooth_number)
+	REFERENCES proj1.teeth (tooth_number)
+	ON UPDATE RESTRICT
+	ON DELETE RESTRICT;
+ALTER TABLE proj1.appointment_procedure_staff_teeth
+	ADD CONSTRAINT fk_procedure_staff FOREIGN KEY (procedure_code, staff_ssn)
+	REFERENCES proj1.procedure_staff (procedure_code, staff_ssn)
+	ON UPDATE CASCADE
+	ON DELETE SET NULL;
+
+-- Insert values
+INSERT INTO proj1.appointment_procedure_staff_teeth 
+	(appointment_id, procedure_code, staff_ssn) VALUES
+	('1', 'D0190', '345678901');
+INSERT INTO proj1.appointment_procedure_staff_teeth 
+	(appointment_id, procedure_code, staff_ssn) VALUES
+	('1', 'D0210', '345678901');
+INSERT INTO proj1.appointment_procedure_staff_teeth 
+	(appointment_id, procedure_code, staff_ssn) VALUES
+	('2', 'D0190', '456789012');
+INSERT INTO proj1.appointment_procedure_staff_teeth 
+	(appointment_id, procedure_code, staff_ssn, tooth_number) VALUES
+	('2', 'D1352', '123456789', '17');
+INSERT INTO proj1.appointment_procedure_staff_teeth 
+	(appointment_id, procedure_code, staff_ssn) VALUES
+	('3', 'D0190', '345678901');
+INSERT INTO proj1.appointment_procedure_staff_teeth 
+	(appointment_id, procedure_code, staff_ssn, tooth_number) VALUES
+	('3', 'D3221', '123456789', '5');
+
+SELECT * FROM proj1.appointment_procedure_staff_teeth;
+
+---------------------
+/***** the end *****/
+---------------------
+
+DROP TABLE IF EXISTS proj1.procedure_pricehistory;
+DROP TABLE IF EXISTS proj1.payments;
+DROP TABLE IF EXISTS proj1.appointment_procedure_staff_teeth;
+DROP TABLE IF EXISTS proj1.procedure_staff;
+DROP TABLE IF EXISTS proj1.appointments;
+DROP TABLE IF EXISTS proj1.procedures;
+DROP TABLE IF EXISTS proj1.staff;
+DROP TABLE IF EXISTS proj1.patients;
+DROP TABLE IF EXISTS proj1.positions;
+DROP TABLE IF EXISTS proj1.teeth;
+
